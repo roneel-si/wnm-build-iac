@@ -1,12 +1,18 @@
-output "vpc_id" {
-  description = "ID of the VPC"
-  value       = module.vpc.vpc_id
-}
+# output "vpc_id" {
+#   description = "ID of the VPC"
+#   value       = module.vpc.vpc_id
+# }
 
-output "cloudfront_distribution_domain" {
-  description = "CloudFront distribution domain name"
-  value       = module.cloudfront.cloudfront_distribution_domain
-}
+# CloudFront outputs (disabled for LocalStack Community)
+# output "cloudfront_distribution_domain" {
+#   description = "CloudFront distribution domain name"
+#   value       = module.cloudfront.cloudfront_distribution_domain
+# }
+
+# output "cloudfront_distribution_id" {
+#   description = "CloudFront distribution ID"
+#   value       = module.cloudfront.cloudfront_distribution_id
+# }
 
 output "api_gateway_url" {
   description = "API Gateway URL"

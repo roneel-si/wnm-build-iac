@@ -9,88 +9,49 @@ variable "environment" {
 }
 
 variable "vpc_id" {
-  description = "ID of the VPC"
+  description = "ID of the VPC (optional for serverless architecture)"
   type        = string
+  default     = ""
 }
 
 variable "private_subnet_ids" {
-  description = "IDs of the private subnets"
+  description = "IDs of the private subnets (optional for serverless architecture)"
   type        = list(string)
+  default     = []
 }
 
 variable "lambda_sg_id" {
-  description = "ID of the Lambda security group"
-  type        = string
-}
-
-variable "lambda_runtime" {
-  description = "Lambda runtime"
-  type        = string
-  default     = "python3.9"
-}
-
-variable "lambda_handler" {
-  description = "Lambda handler for API function"
-  type        = string
-  default     = "lambda_function.lambda_handler"
-}
-
-variable "background_lambda_handler" {
-  description = "Lambda handler for background function"
-  type        = string
-  default     = "lambda_function.lambda_handler"
-}
-
-variable "lambda_timeout" {
-  description = "Lambda timeout in seconds"
-  type        = number
-  default     = 30
-}
-
-variable "background_lambda_timeout" {
-  description = "Background Lambda timeout in seconds"
-  type        = number
-  default     = 300
-}
-
-variable "lambda_memory_size" {
-  description = "Lambda memory size in MB"
-  type        = number
-  default     = 128
-}
-
-variable "lambda_zip_file" {
-  description = "Path to Lambda ZIP file"
+  description = "ID of the Lambda security group (optional for serverless architecture)"
   type        = string
   default     = ""
 }
 
-variable "background_lambda_zip_file" {
-  description = "Path to background Lambda ZIP file"
-  type        = string
-  default     = ""
+variable "lambda_functions" {
+  description = "Configuration for Lambda functions"
+  type = map(object({
+    handler                = string
+    runtime                = optional(string, "python3.9")
+    timeout                = optional(number, 30)
+    memory_size            = optional(number, 128)
+    zip_file               = optional(string, "")
+    s3_bucket              = optional(string, "")
+    s3_key                 = optional(string, "")
+    environment_variables  = optional(map(string), {})
+  }))
+  default = {
+    api = {
+      handler = "lambda_function.lambda_handler"
+      timeout = 30
+    }
+    background = {
+      handler = "lambda_function.lambda_handler"
+      timeout = 300
+    }
+  }
 }
 
-variable "lambda_s3_bucket" {
-  description = "S3 bucket containing Lambda code"
-  type        = string
-  default     = ""
-}
-
-variable "lambda_s3_key" {
-  description = "S3 key for Lambda code"
-  type        = string
-  default     = ""
-}
-
-variable "background_lambda_s3_key" {
-  description = "S3 key for background Lambda code"
-  type        = string
-  default     = ""
-}
-
-variable "lambda_environment_variables" {
-  description = "Environment variables for Lambda functions"
+variable "lambda_iam_policies" {
+  description = "Custom IAM policies for Lambda functions"
   type        = map(string)
   default     = {}
 }

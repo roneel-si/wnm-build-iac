@@ -6,6 +6,7 @@ resource "aws_s3_bucket" "website" {
     Name = "${var.project_name}-${var.environment}-frontend"
     Type = "Website"
   })
+
 }
 
 resource "random_string" "bucket_suffix" {
@@ -53,7 +54,7 @@ resource "aws_s3_bucket_public_access_block" "website" {
 }
 
 resource "aws_s3_bucket_policy" "website" {
-  bucket = aws_s3_bucket.website.id
+  bucket     = aws_s3_bucket.website.id
   depends_on = [aws_s3_bucket_public_access_block.website]
 
   policy = jsonencode({

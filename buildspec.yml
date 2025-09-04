@@ -1,0 +1,63 @@
+version: 0.2
+
+# CodeBuild buildspec for React frontend deployment
+# This file should be placed in the root of your React repository
+
+env:
+  variables:
+    # These will be set by CodePipeline from environment variables
+    # NODE_ENV: "production" 
+    # REACT_APP_API_URL: "${API_GATEWAY_URL}"
+    # S3_BUCKET: "${S3_BUCKET}"
+    # CLOUDFRONT_DISTRIBUTION_ID: "${CLOUDFRONT_DISTRIBUTION_ID}"
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+    commands:
+      - echo Install started on `date`
+      - echo Installing dependencies...
+      - npm ci --production
+
+  pre_build:
+    commands:
+      - echo Pre-build started on `date`
+      - echo Running tests...
+      - npm run test -- --coverage --ci --reporters=default --reporters=jest-junit --watchAll=false
+      - echo Running linting...
+      - npm run lint
+      
+  build:
+    commands:
+      - echo Build started on `date`
+      - echo Building the React application...
+      - npm run build
+      - echo Build completed on `date`
+      
+  post_build:
+    commands:
+      - echo Post-build started on `date`
+      - echo Deploying to S3...
+      - aws s3 sync build/ s3://$S3_BUCKET --delete --cache-control max-age=31536000
+      - aws s3 cp s3://$S3_BUCKET/index.html s3://$S3_BUCKET/index.html --cache-control max-age=0 --metadata-directive REPLACE
+      - echo Creating CloudFront invalidation...
+      - aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_DISTRIBUTION_ID --paths "/*"
+      - echo Deployment completed on `date`
+
+artifacts:
+  files:
+    - '**/*'
+  base-directory: 'build'
+  name: frontend-build
+
+cache:
+  paths:
+    - 'node_modules/**/*'
+
+reports:
+  jest_reports:
+    files:
+      - junit.xml
+    base-directory: coverage
+    file-format: JUNITXML

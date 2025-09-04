@@ -3,6 +3,11 @@ output "website_bucket_name" {
   value       = aws_s3_bucket.website.bucket
 }
 
+output "website_bucket_arn" {
+  description = "ARN of the S3 website bucket"
+  value       = aws_s3_bucket.website.arn
+}
+
 output "website_bucket_domain_name" {
   description = "Domain name of the S3 website bucket"
   value       = aws_s3_bucket.website.bucket_domain_name
@@ -18,7 +23,17 @@ output "codepipeline_artifacts_bucket_name" {
   value       = aws_s3_bucket.codepipeline_artifacts.bucket
 }
 
+output "codepipeline_artifacts_bucket_arn" {
+  description = "ARN of the CodePipeline artifacts bucket"
+  value       = aws_s3_bucket.codepipeline_artifacts.arn
+}
+
 output "lambda_deployments_bucket_name" {
   description = "Name of the Lambda deployments bucket"
   value       = aws_s3_bucket.lambda_deployments.bucket
+}
+
+output "lambda_deployments_bucket_arn" {
+  description = "ARN of the Lambda deployments bucket"
+  value       = aws_s3_bucket.lambda_deployments.arn
 }

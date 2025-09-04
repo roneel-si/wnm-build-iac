@@ -30,60 +30,50 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc_execution" {
   role       = aws_iam_role.lambda_role.name
 }
 
-# Custom policy for additional permissions
-resource "aws_iam_role_policy" "lambda_custom_policy" {
-  name = "${var.project_name}-${var.environment}-lambda-custom-policy"
-  role = aws_iam_role.lambda_role.id
+# Custom IAM policies (configured from project level)
+resource "aws_iam_role_policy" "lambda_custom_policies" {
+  for_each = var.lambda_iam_policies
 
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ]
-        Resource = "arn:aws:logs:*:*:*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
+  name   = "${var.project_name}-${var.environment}-${each.key}"
+  role   = aws_iam_role.lambda_role.id
+  policy = each.value
 }
 
-# Lambda function for API
-resource "aws_lambda_function" "api" {
-  function_name = "${var.project_name}-${var.environment}-api"
-  role         = aws_iam_role.lambda_role.arn
-  handler      = var.lambda_handler
-  runtime      = var.lambda_runtime
-  timeout      = var.lambda_timeout
-  memory_size  = var.lambda_memory_size
+# Dynamic Lambda functions
+resource "aws_lambda_function" "functions" {
+  for_each = var.lambda_functions
 
-  filename         = var.lambda_zip_file != "" ? var.lambda_zip_file : null
-  s3_bucket        = var.lambda_s3_bucket != "" ? var.lambda_s3_bucket : null
-  s3_key          = var.lambda_s3_key != "" ? var.lambda_s3_key : null
-  source_code_hash = var.lambda_zip_file != "" ? filebase64sha256(var.lambda_zip_file) : null
+  function_name = "${var.project_name}-${var.environment}-${each.key}"
+  role          = aws_iam_role.lambda_role.arn
+  handler       = each.value.handler
+  runtime       = each.value.runtime
+  timeout       = each.value.timeout
+  memory_size   = each.value.memory_size
 
-  vpc_config {
-    subnet_ids         = var.private_subnet_ids
-    security_group_ids = [var.lambda_sg_id]
+  filename         = each.value.zip_file != "" ? each.value.zip_file : (each.value.s3_bucket != "" ? null : "../../modules/lambda/dummy-lambda.zip")
+  s3_bucket        = each.value.s3_bucket != "" ? each.value.s3_bucket : null
+  s3_key           = each.value.s3_key != "" ? each.value.s3_key : null
+  source_code_hash = each.value.zip_file != "" ? filebase64sha256(each.value.zip_file) : (each.value.s3_bucket != "" ? null : filebase64sha256("../../modules/lambda/dummy-lambda.zip"))
+
+  # VPC configuration - only if VPC is provided
+  dynamic "vpc_config" {
+    for_each = var.vpc_id != "" ? [1] : []
+    content {
+      subnet_ids         = var.private_subnet_ids
+      security_group_ids = [var.lambda_sg_id]
+    }
   }
 
-  environment {
-    variables = var.lambda_environment_variables
+  # Environment variables - only if provided
+  dynamic "environment" {
+    for_each = length(each.value.environment_variables) > 0 ? [1] : []
+    content {
+      variables = each.value.environment_variables
+    }
   }
 
   tags = merge(var.tags, {
-    Name = "${var.project_name}-${var.environment}-api"
+    Name = "${var.project_name}-${var.environment}-${each.key}"
   })
 
   depends_on = [
@@ -93,50 +83,17 @@ resource "aws_lambda_function" "api" {
   ]
 }
 
-# Lambda function for background tasks
-resource "aws_lambda_function" "background" {
-  function_name = "${var.project_name}-${var.environment}-background"
-  role         = aws_iam_role.lambda_role.arn
-  handler      = var.background_lambda_handler
-  runtime      = var.lambda_runtime
-  timeout      = var.background_lambda_timeout
-  memory_size  = var.lambda_memory_size
-
-  filename         = var.background_lambda_zip_file != "" ? var.background_lambda_zip_file : null
-  s3_bucket        = var.lambda_s3_bucket != "" ? var.lambda_s3_bucket : null
-  s3_key          = var.background_lambda_s3_key != "" ? var.background_lambda_s3_key : null
-  source_code_hash = var.background_lambda_zip_file != "" ? filebase64sha256(var.background_lambda_zip_file) : null
-
-  vpc_config {
-    subnet_ids         = var.private_subnet_ids
-    security_group_ids = [var.lambda_sg_id]
-  }
-
-  environment {
-    variables = var.lambda_environment_variables
-  }
-
-  tags = merge(var.tags, {
-    Name = "${var.project_name}-${var.environment}-background"
-  })
-
-  depends_on = [
-    aws_iam_role_policy_attachment.lambda_basic_execution,
-    aws_iam_role_policy_attachment.lambda_vpc_execution,
-    aws_cloudwatch_log_group.background_lambda_logs
-  ]
+# Backwards compatibility - reference specific functions for outputs
+locals {
+  api_function        = aws_lambda_function.functions["api"]
+  background_function = aws_lambda_function.functions["background"]
 }
 
-# CloudWatch Log Groups
+# Dynamic CloudWatch Log Groups for each Lambda function
 resource "aws_cloudwatch_log_group" "lambda_logs" {
-  name              = "/aws/lambda/${var.project_name}-${var.environment}-api"
-  retention_in_days = var.log_retention_days
+  for_each = var.lambda_functions
 
-  tags = var.tags
-}
-
-resource "aws_cloudwatch_log_group" "background_lambda_logs" {
-  name              = "/aws/lambda/${var.project_name}-${var.environment}-background"
+  name              = "/aws/lambda/${var.project_name}-${var.environment}-${each.key}"
   retention_in_days = var.log_retention_days
 
   tags = var.tags

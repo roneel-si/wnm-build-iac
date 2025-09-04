@@ -131,10 +131,10 @@ resource "aws_api_gateway_method_response" "proxy" {
   http_method = aws_api_gateway_method.proxy.http_method
   status_code = "200"
 
-  response_headers = {
-    "Access-Control-Allow-Headers" = true
-    "Access-Control-Allow-Methods" = true
-    "Access-Control-Allow-Origin"  = true
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -144,10 +144,10 @@ resource "aws_api_gateway_method_response" "proxy_root" {
   http_method = aws_api_gateway_method.proxy_root.http_method
   status_code = "200"
 
-  response_headers = {
-    "Access-Control-Allow-Headers" = true
-    "Access-Control-Allow-Methods" = true
-    "Access-Control-Allow-Origin"  = true
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -178,10 +178,10 @@ resource "aws_api_gateway_method_response" "options_proxy" {
   http_method = aws_api_gateway_method.options_proxy.http_method
   status_code = "200"
 
-  response_headers = {
-    "Access-Control-Allow-Headers" = true
-    "Access-Control-Allow-Methods" = true
-    "Access-Control-Allow-Origin"  = true
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 
   response_models = {
@@ -195,10 +195,10 @@ resource "aws_api_gateway_integration_response" "options_proxy" {
   http_method = aws_api_gateway_method.options_proxy.http_method
   status_code = aws_api_gateway_method_response.options_proxy.status_code
 
-  response_headers = {
-    "Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-    "Access-Control-Allow-Methods" = "'GET,OPTIONS,POST,PUT,DELETE'"
-    "Access-Control-Allow-Origin"  = "'*'"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS,POST,PUT,DELETE'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 
   depends_on = [aws_api_gateway_method.options_proxy, aws_api_gateway_integration.options_proxy]
