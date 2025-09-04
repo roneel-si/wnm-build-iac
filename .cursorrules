@@ -1,0 +1,103 @@
+# Cursor Rules for WNM Build IAC Repository
+
+## Project Context
+
+This is an Infrastructure as Code (IAC) repository using Terraform to manage AWS resources for multiple projects. Currently focused on SportzIQ (a trivia application).
+
+## Repository Structure
+
+-   `modules/` - Reusable Terraform modules shared across projects
+-   `projects/` - Individual project configurations
+-   `projects/sportziq/` - SportzIQ project infrastructure
+-   `projects/sportziq/environments/` - Environment-specific configurations (dev/staging/prod)
+-   `scripts/` - Deployment and utility scripts
+
+## Code Standards
+
+### Terraform Best Practices
+
+-   Always use consistent naming convention: `{project}-{environment}-{resource}`
+-   Include proper resource tagging with Project, Environment, ManagedBy
+-   Use variables for all configurable values
+-   Include comprehensive outputs for resource references
+-   Add proper descriptions to all variables and outputs
+-   Use data sources instead of hardcoded values where possible
+-   Enable versioning and encryption for S3 buckets
+-   Use security groups with minimal required access
+
+### File Organization
+
+-   Each module should have: `main.tf`, `variables.tf`, `outputs.tf`
+-   Environment-specific values go in `terraform.tfvars` files
+-   Keep modules focused on single responsibility
+-   Use consistent variable naming across modules
+
+### Security Guidelines
+
+-   Never commit sensitive data (use .gitignore)
+-   Enable encryption at rest for all storage resources
+-   Use least privilege principle for IAM policies
+-   Enable VPC flow logs and CloudTrail
+-   Configure proper security groups with specific ports/protocols
+-   Use private subnets for backend resources
+
+### AWS Resource Guidelines
+
+-   Use multiple AZs for high availability
+-   Enable versioning for S3 buckets
+-   Use CloudFront for static content distribution
+-   Configure proper CORS for API Gateway
+-   Set up CloudWatch alarms for monitoring
+-   Use X-Ray tracing for debugging
+-   Enable access logging for all services
+
+## Coding Preferences
+
+-   Use HCL (HashiCorp Configuration Language) syntax
+-   Prefer explicit resource configurations over defaults
+-   Use locals for computed values and complex expressions
+-   Group related resources in the same file
+-   Comment complex logic and business requirements
+-   Use consistent indentation (2 spaces)
+
+## Deployment Process
+
+-   Always run `terraform plan` before `terraform apply`
+-   Use the provided deployment scripts in `scripts/`
+-   Test changes in dev environment first
+-   Use remote state with S3 backend and DynamoDB locking
+-   Validate and format code before committing
+
+## Environment Management
+
+-   dev: Development environment with relaxed security
+-   staging: Pre-production testing environment
+-   prod: Production environment with strict security
+
+## Monitoring and Observability
+
+-   Set up CloudWatch alarms for:
+    -   API Gateway 4XX/5XX errors
+    -   Lambda function errors and duration
+    -   Request count spikes
+-   Enable X-Ray tracing for distributed tracing
+-   Configure log retention policies
+-   Use structured logging in JSON format
+
+## When suggesting code changes:
+
+1. Follow the established naming conventions
+2. Include proper error handling
+3. Add appropriate tags and descriptions
+4. Consider security implications
+5. Ensure high availability and scalability
+6. Include monitoring and alerting
+7. Test configurations in development first
+
+## Current Focus Areas
+
+-   SportzIQ trivia application infrastructure
+-   React frontend deployment pipeline
+-   Lambda-based API backend
+-   CloudFront distribution for global delivery
+-   Comprehensive monitoring and alerting setup
