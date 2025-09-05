@@ -24,6 +24,6 @@ output "cloudfront_distribution_status" {
 }
 
 output "cloudfront_origin_access_control_id" {
-  description = "ID of the Origin Access Control"
-  value       = aws_cloudfront_origin_access_control.s3_oac.id
+  description = "ID of the Origin Access Control (if created)"
+  value       = length(aws_cloudfront_origin_access_control.s3_oac) > 0 ? aws_cloudfront_origin_access_control.s3_oac[0].id : null
 }

@@ -177,9 +177,125 @@ module "cloudfront" {
   project_name = local.project_name
   environment  = var.environment
 
-  s3_bucket_domain_name = module.s3.website_bucket_domain_name
-  api_gateway_domain    = module.api_gateway.api_gateway_domain
-  api_gateway_stage     = var.environment
+  # CloudFront Distribution Configuration
+  cloudfront_config = {
+    comment             = "SportzIQ ${var.environment} - Trivia Game CDN"
+    default_root_object = "index.html"
+    enabled             = true
+    is_ipv6_enabled     = true
+    price_class         = var.environment == "prod" ? "PriceClass_All" : "PriceClass_100"
+  }
+
+  # Dynamic Origins for SportzIQ
+  origins = {
+    s3_website = {
+      domain_name              = module.s3.website_bucket_domain_name
+      origin_access_control_id = "auto"  # Auto-create OAC for S3
+    }
+    api_gateway = {
+      domain_name = module.api_gateway.api_gateway_domain
+      origin_path = "/${var.environment}"
+      custom_origin_config = {
+        http_port              = 80
+        https_port             = 443
+        origin_protocol_policy = "https-only"
+        origin_ssl_protocols   = ["TLSv1.2"]
+      }
+    }
+  }
+
+  # SportzIQ-specific Cache Behaviors
+  cache_behaviors = {
+    default_cache_behavior = {
+      target_origin_id       = "s3_website-${local.project_name}-${var.environment}"
+      viewer_protocol_policy = "redirect-to-https"
+      allowed_methods        = ["GET", "HEAD"]
+      cached_methods         = ["GET", "HEAD"]
+      compress               = true
+      
+      forwarded_values = {
+        query_string = false
+        headers      = []
+        cookies = {
+          forward = "none"
+        }
+      }
+      
+      min_ttl     = 0
+      default_ttl = 3600    # 1 hour for static assets
+      max_ttl     = 86400   # 1 day
+    }
+
+    ordered_cache_behaviors = {
+      api_routes = {
+        path_pattern           = "/api/*"
+        target_origin_id       = "api_gateway-${local.project_name}-${var.environment}"
+        viewer_protocol_policy = "redirect-to-https"
+        allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+        cached_methods         = ["GET", "HEAD", "OPTIONS"]
+        compress               = true
+        
+        forwarded_values = {
+          query_string = true
+          headers      = ["Authorization", "Content-Type", "Accept", "X-Game-Session-Id", "X-Player-Id"]
+          cookies = {
+            forward = "none"
+          }
+        }
+        
+        min_ttl     = 0
+        default_ttl = 0  # No caching for API calls
+        max_ttl     = 0
+      }
+
+      game_assets = {
+        path_pattern           = "/static/games/*"
+        target_origin_id       = "s3_website-${local.project_name}-${var.environment}"
+        viewer_protocol_policy = "redirect-to-https"
+        allowed_methods        = ["GET", "HEAD"]
+        cached_methods         = ["GET", "HEAD"]
+        compress               = true
+        
+        forwarded_values = {
+          query_string = false
+          headers      = []
+          cookies = {
+            forward = "none"
+          }
+        }
+        
+        min_ttl     = 86400   # 1 day
+        default_ttl = 604800  # 1 week for game assets
+        max_ttl     = 31536000 # 1 year
+      }
+    }
+  }
+
+  # SportzIQ Custom Error Pages
+  custom_error_responses = {
+    "404" = {
+      error_code         = 404
+      response_code      = 200
+      response_page_path = "/index.html"  # SPA routing
+    }
+    "403" = {
+      error_code         = 403
+      response_code      = 200
+      response_page_path = "/index.html"
+    }
+  }
+
+  # Geographic Restrictions (none for global trivia game)
+  geo_restriction = {
+    restriction_type = "none"
+    locations        = []
+  }
+
+  # SSL Configuration for SportzIQ
+  viewer_certificate = {
+    cloudfront_default_certificate = true
+    minimum_protocol_version       = "TLSv1.2_2021"
+  }
 
   tags = local.common_tags
 }
