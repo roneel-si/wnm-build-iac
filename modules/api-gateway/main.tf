@@ -1,205 +1,180 @@
-# API Gateway
-resource "aws_api_gateway_rest_api" "main" {
-  name        = "${var.project_name}-${var.environment}-api"
-  description = "API Gateway for ${var.project_name} ${var.environment}"
-
-  endpoint_configuration {
-    types = ["REGIONAL"]
-  }
-
-  tags = var.tags
-}
-
-# API Gateway Resource (proxy)
-resource "aws_api_gateway_resource" "proxy" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
-  path_part   = "{proxy+}"
-}
-
-# API Gateway Method (ANY)
-resource "aws_api_gateway_method" "proxy" {
-  rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.proxy.id
-  http_method   = "ANY"
-  authorization = "NONE"
-}
-
-# API Gateway Method (root)
-resource "aws_api_gateway_method" "proxy_root" {
-  rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_rest_api.main.root_resource_id
-  http_method   = "ANY"
-  authorization = "NONE"
-}
-
-# API Gateway Integration
-resource "aws_api_gateway_integration" "lambda" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_method.proxy.resource_id
-  http_method = aws_api_gateway_method.proxy.http_method
-
-  integration_http_method = "POST"
-  type                    = "AWS_PROXY"
-  uri                     = var.lambda_function_invoke_arn
-}
-
-# API Gateway Integration (root)
-resource "aws_api_gateway_integration" "lambda_root" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_method.proxy_root.resource_id
-  http_method = aws_api_gateway_method.proxy_root.http_method
-
-  integration_http_method = "POST"
-  type                    = "AWS_PROXY"
-  uri                     = var.lambda_function_invoke_arn
-}
-
-# API Gateway Deployment
-resource "aws_api_gateway_deployment" "main" {
-  depends_on = [
-    aws_api_gateway_integration.lambda,
-    aws_api_gateway_integration.lambda_root,
-  ]
-
-  rest_api_id = aws_api_gateway_rest_api.main.id
-
-  triggers = {
-    redeployment = sha1(jsonencode([
-      aws_api_gateway_resource.proxy.id,
-      aws_api_gateway_method.proxy.id,
-      aws_api_gateway_integration.lambda.id,
-      aws_api_gateway_method.proxy_root.id,
-      aws_api_gateway_integration.lambda_root.id,
-    ]))
-  }
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-# API Gateway Stage
-resource "aws_api_gateway_stage" "main" {
-  deployment_id = aws_api_gateway_deployment.main.id
-  rest_api_id   = aws_api_gateway_rest_api.main.id
-  stage_name    = var.environment
-
-  access_log_settings {
-    destination_arn = aws_cloudwatch_log_group.api_gw.arn
-    format = jsonencode({
-      requestId      = "$context.requestId"
-      ip             = "$context.identity.sourceIp"
-      caller         = "$context.identity.caller"
-      user           = "$context.identity.user"
-      requestTime    = "$context.requestTime"
-      httpMethod     = "$context.httpMethod"
-      resourcePath   = "$context.resourcePath"
-      status         = "$context.status"
-      protocol       = "$context.protocol"
-      responseLength = "$context.responseLength"
+# Local variables for configuration
+locals {
+  api_name = var.api_name != "" ? var.api_name : "${var.project_name}-${var.environment}-api"
+  api_description = var.api_description != "" ? var.api_description : "API Gateway for ${var.project_name} ${var.environment}"
+  stage_name = var.stage_configuration.stage_name != "" ? var.stage_configuration.stage_name : var.environment
+  
+  # Create resource hierarchy map
+  resources_with_parents = {
+    for name, resource in var.api_resources : name => merge(resource, {
+      parent_resource_id = resource.parent_path == "" ? null : resource.parent_path
     })
   }
+  
+  # Default log format if not provided
+  default_log_format = jsonencode({
+    requestId      = "$context.requestId"
+    ip             = "$context.identity.sourceIp"
+    caller         = "$context.identity.caller"
+    user           = "$context.identity.user"
+    requestTime    = "$context.requestTime"
+    httpMethod     = "$context.httpMethod"
+    resourcePath   = "$context.resourcePath"
+    status         = "$context.status"
+    protocol       = "$context.protocol"
+    responseLength = "$context.responseLength"
+  })
+}
 
-  xray_tracing_enabled = var.enable_xray_tracing
+# API Gateway v2 HTTP API
+resource "aws_apigatewayv2_api" "main" {
+  name          = local.api_name
+  description   = local.api_description
+  protocol_type = "HTTP"
+
+  # Built-in CORS support in v2
+  cors_configuration {
+    allow_origins     = var.cors_configuration.allow_origins
+    allow_methods     = var.cors_configuration.allow_methods
+    allow_headers     = var.cors_configuration.allow_headers
+    allow_credentials = var.cors_configuration.allow_credentials
+    max_age           = var.cors_configuration.max_age
+  }
 
   tags = var.tags
 }
 
-# CloudWatch Log Group for API Gateway
+# API Gateway v2 Routes - simpler than v1 resources+methods
+locals {
+  # Flatten all routes from the configuration
+  all_routes = flatten([
+    for resource_name, resource in var.api_resources : [
+      for method_name, method in resource.methods : {
+        key = "${resource_name}-${method_name}"
+        route_key = "${method.http_method} ${local.build_full_path[resource_name]}"
+        method = method
+        resource_name = resource_name
+      }
+    ]
+  ])
+  routes_map = { for item in local.all_routes : item.key => item }
+  
+  # Build full paths for nested resources
+  build_full_path = {
+    for name, resource in var.api_resources : name => (
+      resource.path_part == "" ? "/" : 
+      resource.parent_path == "" ? "/${resource.path_part}" :
+      "/${var.api_resources[resource.parent_path].path_part}/${resource.path_part}"
+    )
+  }
+}
+
+# API Gateway v2 Routes
+resource "aws_apigatewayv2_route" "routes" {
+  for_each = local.routes_map
+
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = each.value.route_key
+  target    = "integrations/${aws_apigatewayv2_integration.integrations[each.key].id}"
+
+  # Authorization (v2 syntax)
+  authorization_type = each.value.method.authorization == "NONE" ? "NONE" : each.value.method.authorization
+  authorizer_id      = each.value.method.authorizer_id != "" ? each.value.method.authorizer_id : null
+}
+
+# API Gateway v2 Integrations
+resource "aws_apigatewayv2_integration" "integrations" {
+  for_each = local.routes_map
+
+  api_id             = aws_apigatewayv2_api.main.id
+  integration_type   = each.value.method.integration.type == "AWS_PROXY" ? "AWS_PROXY" : each.value.method.integration.type
+  integration_method = each.value.method.integration.integration_http_method
+  
+  # Convert function ARN to invoke ARN format for API Gateway integrations
+  integration_uri = each.value.method.integration.lambda_function_arn != "" ? (
+    each.value.method.integration.type == "AWS_PROXY" ? 
+      "arn:aws:apigateway:${data.aws_region.current.name}:lambda:path/2015-03-31/functions/${each.value.method.integration.lambda_function_arn}/invocations" :
+      each.value.method.integration.lambda_function_arn
+  ) : each.value.method.integration.uri
+
+  # Payload format for Lambda proxy integration
+  payload_format_version = each.value.method.integration.type == "AWS_PROXY" ? "2.0" : null
+}
+
+# API Gateway v2 Stage (combines deployment and stage from v1)
+resource "aws_apigatewayv2_stage" "main" {
+  api_id      = aws_apigatewayv2_api.main.id
+  name        = local.stage_name
+  description = var.stage_configuration.deployment_description
+
+  # Stage variables
+  stage_variables = var.stage_configuration.variables
+
+  # Auto deploy changes
+  auto_deploy = true
+
+  # Access logging - only if enabled
+  dynamic "access_log_settings" {
+    for_each = var.logging_configuration.enabled ? [1] : []
+    content {
+      destination_arn = aws_cloudwatch_log_group.api_gw[0].arn
+      format = var.logging_configuration.format != "" ? var.logging_configuration.format : local.default_log_format
+    }
+  }
+
+  # Default route settings (throttling, detailed metrics)
+  default_route_settings {
+    throttling_rate_limit   = 10000
+    throttling_burst_limit  = 5000
+    detailed_metrics_enabled = var.enable_xray_tracing
+  }
+
+  tags = var.tags
+
+  depends_on = [aws_apigatewayv2_route.routes]
+}
+
+# CloudWatch Log Group for API Gateway - only if logging enabled
 resource "aws_cloudwatch_log_group" "api_gw" {
-  name              = "/aws/apigateway/${var.project_name}-${var.environment}"
-  retention_in_days = var.log_retention_days
+  count = var.logging_configuration.enabled ? 1 : 0
+  
+  name              = "/aws/apigateway/${local.api_name}"
+  retention_in_days = var.logging_configuration.retention_days
 
   tags = var.tags
 }
 
-# Lambda permission for API Gateway
+# Static Lambda permissions - based on input configuration, not computed values
+locals {
+  # Flatten Lambda integrations from input variables (static keys)
+  lambda_integrations_list = flatten([
+    for resource_name, resource in var.api_resources : [
+      for method_name, method in resource.methods : {
+        key = "${resource_name}-${method_name}"
+        method = method
+      }
+      if method.integration.type == "AWS_PROXY"
+    ]
+  ])
+  
+  # Convert to map with static keys
+  lambda_integrations = {
+    for item in local.lambda_integrations_list : item.key => item.method
+  }
+}
+
 resource "aws_lambda_permission" "api_gw" {
-  statement_id  = "AllowExecutionFromAPIGateway"
+  for_each = local.lambda_integrations
+
+  statement_id  = "AllowExecutionFromAPIGateway-${each.key}"
   action        = "lambda:InvokeFunction"
-  function_name = var.lambda_function_arn
+  # Use the function ARN directly (should be passed as lambda function ARN, not invoke ARN)
+  function_name = each.value.integration.lambda_function_arn
   principal     = "apigateway.amazonaws.com"
 
-  source_arn = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+  source_arn = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
 }
 
-# API Gateway Method Response
-resource "aws_api_gateway_method_response" "proxy" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.proxy.id
-  http_method = aws_api_gateway_method.proxy.http_method
-  status_code = "200"
-
-  response_parameters = {
-    "method.response.header.Access-Control-Allow-Headers" = true
-    "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin"  = true
-  }
-}
-
-resource "aws_api_gateway_method_response" "proxy_root" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_rest_api.main.root_resource_id
-  http_method = aws_api_gateway_method.proxy_root.http_method
-  status_code = "200"
-
-  response_parameters = {
-    "method.response.header.Access-Control-Allow-Headers" = true
-    "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin"  = true
-  }
-}
-
-# CORS
-resource "aws_api_gateway_method" "options_proxy" {
-  rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.proxy.id
-  http_method   = "OPTIONS"
-  authorization = "NONE"
-}
-
-resource "aws_api_gateway_integration" "options_proxy" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.proxy.id
-  http_method = aws_api_gateway_method.options_proxy.http_method
-  type        = "MOCK"
-
-  request_templates = {
-    "application/json" = jsonencode({
-      statusCode = 200
-    })
-  }
-}
-
-resource "aws_api_gateway_method_response" "options_proxy" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.proxy.id
-  http_method = aws_api_gateway_method.options_proxy.http_method
-  status_code = "200"
-
-  response_parameters = {
-    "method.response.header.Access-Control-Allow-Headers" = true
-    "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin"  = true
-  }
-
-  response_models = {
-    "application/json" = "Empty"
-  }
-}
-
-resource "aws_api_gateway_integration_response" "options_proxy" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.proxy.id
-  http_method = aws_api_gateway_method.options_proxy.http_method
-  status_code = aws_api_gateway_method_response.options_proxy.status_code
-
-  response_parameters = {
-    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS,POST,PUT,DELETE'"
-    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
-  }
-
-  depends_on = [aws_api_gateway_method.options_proxy, aws_api_gateway_integration.options_proxy]
-}
+# Note: API Gateway v2 handles CORS and responses automatically
+# No need for separate method responses, CORS methods, or integration responses
+# All handled natively by the cors_configuration in aws_apigatewayv2_api

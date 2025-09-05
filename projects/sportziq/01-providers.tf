@@ -8,12 +8,11 @@ terraform {
     }
   }
 
-  # Temporarily using local state for testing
   # backend "s3" {
   #   bucket         = "wnm-build-iac-terraform-state"
   #   key            = "sportziq/terraform.tfstate"
   #   region         = "us-east-1"
-  #   dynamodb_table = "terraform-state-lock"
+  #   use_lockfile = true
   #   encrypt        = true
   # }
 }
